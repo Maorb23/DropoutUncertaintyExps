@@ -6,7 +6,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import math
-from scipy.misc import logsumexp
+from scipy.special import logsumexp
 import numpy as np
 
 from keras.regularizers import l2
@@ -73,19 +73,19 @@ class net:
 
         inputs = Input(shape=(X_train.shape[1],))
         inter = Dropout(dropout)(inputs, training=True)
-        inter = Dense(n_hidden[0], activation='relu', W_regularizer=l2(reg))(inter)
+        inter = Dense(n_hidden[0], activation='relu', kernel_regularizer=l2(reg))(inter)
         for i in range(len(n_hidden) - 1):
-            inter = Dropout(dropout)(inter, training=True)
-            inter = Dense(n_hidden[i+1], activation='relu', W_regularizer=l2(reg))(inter)
+            inter = Dropout(dropout)(inter, training=True) # Dropout layer
+            inter = Dense(n_hidden[i+1], activation='relu', kernel_regularizer=l2(reg))(inter)
         inter = Dropout(dropout)(inter, training=True)
-        outputs = Dense(y_train_normalized.shape[1], W_regularizer=l2(reg))(inter)
+        outputs = Dense(y_train_normalized.shape[1], kernel_regularizer=l2(reg))(inter)
         model = Model(inputs, outputs)
 
         model.compile(loss='mean_squared_error', optimizer='adam')
 
         # We iterate the learning process
         start_time = time.time()
-        model.fit(X_train, y_train_normalized, batch_size=batch_size, nb_epoch=n_epochs, verbose=0)
+        model.fit(X_train, y_train_normalized, batch_size=batch_size, epochs=n_epochs, verbose=0)
         self.model = model
         self.tau = tau
         self.running_time = time.time() - start_time
@@ -120,18 +120,18 @@ class net:
 
         model = self.model
         standard_pred = model.predict(X_test, batch_size=500, verbose=1)
-        standard_pred = standard_pred * self.std_y_train + self.mean_y_train
+        standard_pred = standard_pred * self.std_y_train + self.mean_y_train # De-normalize
         rmse_standard_pred = np.mean((y_test.squeeze() - standard_pred.squeeze())**2.)**0.5
 
         T = 10000
         
-        Yt_hat = np.array([model.predict(X_test, batch_size=500, verbose=0) for _ in range(T)])
-        Yt_hat = Yt_hat * self.std_y_train + self.mean_y_train
-        MC_pred = np.mean(Yt_hat, 0)
+        Yt_hat = np.array([model.predict(X_test, batch_size=500, verbose=0) for _ in range(T)]) # pred
+        Yt_hat = Yt_hat * self.std_y_train + self.mean_y_train # De-normalize
+        MC_pred = np.mean(Yt_hat, 0) # MC prediction after T samples dropout
         rmse = np.mean((y_test.squeeze() - MC_pred.squeeze())**2.)**0.5
 
         # We compute the test log-likelihood
-        ll = (logsumexp(-0.5 * self.tau * (y_test[None] - Yt_hat)**2., 0) - np.log(T) 
+        ll = (logsumexp(-0.5 * self.tau * (y_test[np.newaxis] - Yt_hat)**2., 0) - np.log(T) 
             - 0.5*np.log(2*np.pi) + 0.5*np.log(self.tau))
         test_ll = np.mean(ll)
 
